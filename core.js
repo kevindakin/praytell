@@ -914,10 +914,13 @@ function mobileMenu() {
     (el) => el.querySelector('[data-dropdown="trigger"]') || el
   );
 
+  const DEBUG = true;
+
   const OPEN_DUR = 0.8;
   const CLOSE_DUR = 0.8;
   const RADIUS_BULGE = 160;
   const TRACK_LAG = "-2rem";
+  const ANCHOR_SCROLL_DELAY = 0.15;
 
   let restRadius = 16;
   const clip = { bottom: 100, radius: 16 };
@@ -997,7 +1000,6 @@ function mobileMenu() {
       menu.style.clipPath = "";
       gsap.set(track, { y: 0 });
       nav.classList.remove("is-open");
-      enableScroll();
       mobilePanels?.closePanel({ instant: true, restoreFocus: false });
     },
   });
@@ -1036,6 +1038,9 @@ function mobileMenu() {
     if (!menuOpen) return;
     menuOpen = false;
     buttonText.textContent = "Menu";
+    // Released at the start of the wipe, not the end — an in-menu anchor
+    // link needs scroll live immediately.
+    enableScroll();
     openTl.pause();
     closeTl.invalidate().restart();
   };
@@ -1050,6 +1055,54 @@ function mobileMenu() {
     // Escape steps back one level before closing the whole menu.
     if (mobilePanels?.hasActivePanel()) mobilePanels.closePanel();
     else closeMenu();
+  });
+
+  /* ---------- In-menu anchor links ---------- */
+
+  // Returns the on-page element a link points at, or null if the link
+  // isn't a same-page hash (external, different route, no fragment).
+  const resolveHashTarget = (link) => {
+    const href = link.getAttribute("href");
+    if (!href) return null;
+
+    let url;
+    try {
+      url = new URL(href, location.href);
+    } catch {
+      return null;
+    }
+
+    if (url.origin !== location.origin) return null;
+    if (url.pathname.replace(/\/$/, "") !== location.pathname.replace(/\/$/, ""))
+      return null;
+    if (!url.hash || url.hash === "#") return null;
+
+    const target = document.querySelector(url.hash);
+    if (!target && DEBUG) {
+      console.warn(`[mobileMenu] No element matches ${url.hash} on this page.`);
+    }
+    return target;
+  };
+
+  nav.addEventListener("click", (e) => {
+    if (!menuOpen) return;
+
+    const link = e.target.closest("a[href]");
+    if (!link || !nav.contains(link)) return;
+
+    const target = resolveHashTarget(link);
+    if (!target) return;
+
+    e.preventDefault();
+    e.stopPropagation(); // don't let a global anchor handler double-scroll
+
+    closeMenu();
+
+    gsap.delayedCall(ANCHOR_SCROLL_DELAY, () => {
+      if (window.lenis) window.lenis.scrollTo(target);
+      else target.scrollIntoView({ behavior: "smooth" });
+      if (target.id) history.replaceState(null, "", `#${target.id}`);
+    });
   });
 
   /* ---------- Breakpoint routing ---------- */
